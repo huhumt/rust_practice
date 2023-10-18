@@ -1,0 +1,18 @@
+stages:
+  - 'build'
+
+rust-build:
+  image: rust:slim-bullseye
+  stage: 'build'
+  script:
+    - cargo --version
+    - cd bft
+    - rustup component add clippy rustfmt
+    - cargo clippy --all --verbose
+    - cargo fmt --all --check
+    - cargo build --verbose
+    - cargo doc --all --verbose
+    - cargo test --all --verbose
+    - cargo run -- --version
+    - cargo run -- --help
+    - cargo run -- hello_world.bf
