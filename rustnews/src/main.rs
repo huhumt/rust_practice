@@ -12,6 +12,8 @@ use std::path::Path;
 pub enum JsonDataParseError {
     DataNotHashmapError,
     DataNotArrayError,
+    KeyNotFoundError,
+    InvalidTypeError,
 }
 
 impl fmt::Display for JsonDataParseError {
@@ -19,6 +21,8 @@ impl fmt::Display for JsonDataParseError {
         match self {
             Self::DataNotHashmapError => write!(f, "Not hashmap data"),
             Self::DataNotArrayError => write!(f, "Not array data"),
+            Self::KeyNotFoundError => write!(f, "Key not found in hashmap"),
+            Self::InvalidTypeError => write!(f, "Invalid type convert"),
         }
     }
 }
@@ -63,17 +67,26 @@ fn main() -> Result<(), Box<dyn Error>> {
         response = serde_json::from_reader(File::open(tmp_json_filename)?)?;
     }
 
-    let events = response["events"]
+    let events = response
+        .get("events")
+        .ok_or(JsonDataParseError::KeyNotFoundError)?
         .as_array()
         .ok_or(JsonDataParseError::DataNotArrayError)?;
     let rand_num = rand::thread_rng().gen_range(0..events.len());
     let cur_event = &events[rand_num];
     // println!("{}: {}", cur_event["year"], cur_event["text"]);
-    let extract = &cur_event["pages"]
+    let article_map = &cur_event
+        .get("pages")
+        .ok_or(JsonDataParseError::KeyNotFoundError)?
         .as_array()
         .ok_or(JsonDataParseError::DataNotArrayError)?[0]
         .as_object()
-        .ok_or(JsonDataParseError::DataNotHashmapError)?["extract"];
+        .ok_or(JsonDataParseError::DataNotHashmapError)?;
+    let extract = article_map
+        .get("extract")
+        .ok_or(JsonDataParseError::KeyNotFoundError)?
+        .as_str()
+        .ok_or(JsonDataParseError::InvalidTypeError)?;
     println!("\n\n{}", extract);
 
     // TOP_HEADLINES_URL = "https://newsapi.org/v2/top-headlines"
@@ -81,7 +94,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // SOURCES_URL = "https://newsapi.org/v2/sources"
     // "Content-Type": "Application/JSON", "Authorization": a5645b9190f54f92bd7ab596d165343b
     // https://github.com/mattlisiv/newsapi-python/blob/master/newsapi/const.py
-    if let Some(keyword) = &cur_event["text"]
+    if let Some(keyword) = &cur_event
+        .get("text")
+        .ok_or(JsonDataParseError::KeyNotFoundError)?
         .to_string()
         .replace(&['(', ')', ',', '\"', '.', ';', ':', '\''][..], "")
         .rsplit_once(' ')
@@ -104,16 +119,22 @@ fn main() -> Result<(), Box<dyn Error>> {
             .headers(headers)
             .send()?
             .json::<Value>()?;
-        let news_article = news["articles"]
+        let news_article = news
+            .get("articles")
+            .ok_or(JsonDataParseError::KeyNotFoundError)?
             .as_array()
             .ok_or(JsonDataParseError::DataNotArrayError)?;
         if !news_article.is_empty() {
             let rand_article_index = rand::thread_rng().gen_range(0..news_article.len());
             let rand_article = &news_article[rand_article_index];
-            let rand_article_title = &rand_article["title"];
-            let rand_article_url = &rand_article["url"].to_string();
-            let short_url = shorten_url(rand_article_url)?;
-            println!("\n\n{}, from {}", rand_article_title, short_url);
+            if let (
+                Some(Value::String(rand_article_title)),
+                Some(Value::String(rand_article_url)),
+            ) = (rand_article.get("title"), rand_article.get("url"))
+            {
+                let short_url = shorten_url(rand_article_url)?;
+                println!("\n\n{}, from {}", rand_article_title, short_url);
+            }
         }
     }
 
